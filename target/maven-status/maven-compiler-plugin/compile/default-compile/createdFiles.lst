@@ -1,4 +1,2 @@
 com\example\hl7fhirconverter\api\ConverterController.class
 com\example\hl7fhirconverter\Hl7FhirConverterApplication.class
-com\example\hl7fhirconverter\service\BundleNormalizer.class
-com\example\hl7fhirconverter\service\HL7SimpleData.class

@@ -219,11 +219,16 @@ public class BundleNormalizer {
         // Remove IBM proprietary extensions globally
         stripIbmExtensions(bundle);
 
-        // After patient & encounter processed, add focus
-        if (headerReference != null) {
+        // After resources built, find first Encounter for MessageHeader focus
+        Encounter firstEncounter = null;
+        for (Bundle.BundleEntryComponent be : bundle.getEntry()) {
+            if (be.getResource() instanceof Encounter) { firstEncounter = (Encounter) be.getResource(); break; }
+        }
+
+        if (headerReference != null && firstPatient != null && firstEncounter != null) {
             org.hl7.fhir.r4.model.MessageHeader mh = (org.hl7.fhir.r4.model.MessageHeader) headerReference.getResource();
-            mh.addFocus(new Reference("urn:uuid:" + patient.getIdElement().getIdPart()));
-            mh.addFocus(new Reference("urn:uuid:" + enc.getIdElement().getIdPart()));
+            mh.addFocus(new Reference("urn:uuid:" + firstPatient.getIdElement().getIdPart()));
+            mh.addFocus(new Reference("urn:uuid:" + firstEncounter.getIdElement().getIdPart()));
         }
 
         return bundle;
