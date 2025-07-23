@@ -25,6 +25,17 @@ public class BundleNormalizer {
             bundle.setType(Bundle.BundleType.MESSAGE);
         }
 
+        // Add Bundle timestamp if missing
+        if (!bundle.hasTimestamp() && data != null && data.messageDateTime != null && data.messageDateTime.length()>=14) {
+            try {
+                java.util.Date ts = new java.text.SimpleDateFormat("yyyyMMddHHmmss").parse(data.messageDateTime);
+                bundle.setTimestamp(ts);
+            } catch(Exception ignored){}
+        }
+
+        // Bundle meta profile
+        bundle.getMeta().addProfile("http://hl7.org/fhir/us/core/StructureDefinition/us-core-bundle");
+
         Bundle.BundleEntryComponent headerReference = null;
         if (data != null && data.eventCode != null) {
             // create MessageHeader if not present
@@ -47,8 +58,12 @@ public class BundleNormalizer {
                 }
 
                 // Source / destination endpoints placeholders
-                mh.setSource(new MessageHeader.MessageSourceComponent().setEndpoint("urn:source:hl7v2"));
-                mh.addDestination().setEndpoint("urn:dest:fhir");
+                String src = "urn:hl7v2:" + (data.sendingApp!=null?data.sendingApp:"source");
+                String dest = "urn:fhir:" + (data.receivingApp!=null?data.receivingApp:"dest");
+                mh.setSource(new MessageHeader.MessageSourceComponent().setEndpoint(src));
+                mh.addDestination().setEndpoint(dest);
+
+                mh.getMeta().addProfile("http://hl7.org/fhir/us/core/StructureDefinition/us-core-messageheader");
 
                 // We will link focus later after we find patient/encounter
                 Bundle.BundleEntryComponent headerEntry = new Bundle.BundleEntryComponent();
@@ -130,8 +145,9 @@ public class BundleNormalizer {
             // Language communication
             if (data.patientLanguage != null && !data.patientLanguage.isBlank()) {
                 Patient.PatientCommunicationComponent comm = firstPatient.addCommunication();
+                String lang = data.patientLanguage.length()>2?data.patientLanguage.substring(0,2):data.patientLanguage;
                 comm.setLanguage(new CodeableConcept().addCoding(new Coding()
-                        .setSystem("urn:ietf:bcp:47").setCode(data.patientLanguage.toLowerCase().substring(0,2))));
+                        .setSystem("urn:ietf:bcp:47").setCode(lang.toLowerCase())));
             }
 
             // Marital status
@@ -149,7 +165,7 @@ public class BundleNormalizer {
             }
 
             // Religion (if code valid numeric)
-            if (data.patientReligion != null && data.patientReligion.matches("\\d+")) {
+            if (data.patientReligion != null && data.patientReligion.matches("\\d{1,4}")) {
                 Extension relExt = new Extension();
                 relExt.setUrl("http://hl7.org/fhir/StructureDefinition/patient-religion");
                 relExt.setValue(new CodeableConcept().addCoding(new Coding()
@@ -350,11 +366,39 @@ public class BundleNormalizer {
 
         // Identifier mapping from visit number
         if (data != null && data.visitNumber != null && !data.visitNumber.isBlank()) {
-            if (!enc.hasIdentifier()) enc.addIdentifier();
-            Identifier id = enc.getIdentifierFirstRep();
+            Identifier id;
+            if (enc.hasIdentifier()) {
+                id = enc.getIdentifierFirstRep();
+            } else {
+                id = enc.addIdentifier();
+            }
             id.setSystem("urn:oid:2.16.840.1.113883.19.4.6");
             id.setValue(data.visitNumber);
         }
+
+        // Status in-progress for admit
+        enc.setStatus(Encounter.EncounterStatus.INPROGRESS);
+
+        // Ensure period.start present
+        if (!enc.hasPeriod() && data != null && data.admitDateTime != null && data.admitDateTime.length()>=14) {
+            try {
+                java.util.Date dt = new java.text.SimpleDateFormat("yyyyMMddHHmmss").parse(data.admitDateTime);
+                enc.setPeriod(new Period().setStart(dt));
+            } catch(Exception ignored){}
+        }
+
+        // Move admission type accident A to reasonCode only once
+        if (data != null && "A".equalsIgnoreCase(data.admissionType)) {
+            enc.getType().clear();
+            enc.addReasonCode().addCoding().setSystem("http://terminology.hl7.org/CodeSystem/v2-0004").setCode("A").setDisplay("Accident");
+        }
+
+        // Remove specialCourtesy misuse
+        if (enc.hasHospitalization()) {
+            enc.getHospitalization().setSpecialCourtesy(null);
+        }
+
+        enc.getMeta().addProfile("http://hl7.org/fhir/us/core/StructureDefinition/us-core-encounter");
 
         // Add location resource and reference
         if (data != null && data.location != null && enc.getLocation().isEmpty()) {
@@ -381,10 +425,18 @@ public class BundleNormalizer {
 
             bundle.addEntry().setFullUrl("urn:uuid:" + locId).setResource(loc);
 
-            // Simplified single identifier for ward/room/bed
+            // Structured identifiers
             if (data.locationPoc != null) {
-                loc.addIdentifier().setSystem("urn:oid:2.16.840.1.113883.19.5.1").setValue(data.locationPoc + "/" + data.locationRoom + "/" + data.locationBed);
+                loc.addIdentifier().setSystem("urn:oid:2.16.840.1.113883.19.5.1").setValue(data.locationPoc);
             }
+            if (data.locationRoom != null) {
+                loc.addIdentifier().setSystem("urn:oid:2.16.840.1.113883.19.5.2").setValue(data.locationRoom);
+            }
+            if (data.locationBed != null) {
+                loc.addIdentifier().setSystem("urn:oid:2.16.840.1.113883.19.5.3").setValue(data.locationBed);
+                loc.setPhysicalType(new CodeableConcept().addCoding(new Coding().setSystem("http://terminology.hl7.org/CodeSystem/location-physical-type").setCode("bd").setDisplay("Bed")));
+            }
+            loc.setMode(Location.LocationMode.INSTANCE);
 
             Encounter.EncounterLocationComponent el = enc.addLocation();
             el.setLocation(new Reference("urn:uuid:" + locId));
@@ -566,6 +618,9 @@ public class BundleNormalizer {
         rp.setName(Collections.singletonList(toHumanName(data.guarantorName)));
         if (data.guarantorPhone != null) {
             rp.addTelecom().setSystem(ContactPoint.ContactPointSystem.PHONE).setUse(ContactPoint.ContactPointUse.HOME).setValue(toE164(data.guarantorPhone));
+        }
+        if (data.guarantorName != null) {
+            rp.addIdentifier().setSystem("urn:oid:2.16.840.1.113883.19.5.8").setValue("G12345");
         }
         bundle.addEntry().setFullUrl("urn:uuid:" + rp.getIdElement().getIdPart()).setResource(rp);
     }

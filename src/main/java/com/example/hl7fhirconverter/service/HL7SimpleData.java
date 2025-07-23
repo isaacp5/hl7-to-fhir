@@ -16,6 +16,10 @@ public class HL7SimpleData {
     // MSH fields
     public String messageDateTime; // YYYYMMDDHHMMSS
     public String eventCode; // e.g., ADT^A04
+    public String sendingApp;
+    public String sendingFacility;
+    public String receivingApp;
+    public String receivingFacility;
 
     // Admission date/time from PV1-44 (format YYYYMMDDHHMMSS or similar)
     public String admitDateTime;
@@ -61,6 +65,10 @@ public class HL7SimpleData {
         for (String line : lines) {
             if (line.startsWith("MSH")) {
                 String[] fields = line.split("\\|");
+                if (fields.length > 2) d.sendingApp = fields[2];
+                if (fields.length > 3) d.sendingFacility = fields[3];
+                if (fields.length > 4) d.receivingApp = fields[4];
+                if (fields.length > 5) d.receivingFacility = fields[5];
                 if (fields.length > 6) d.messageDateTime = fields[6];
                 if (fields.length > 8) d.eventCode = fields[8];
             } else if (line.startsWith("PV1")) {
