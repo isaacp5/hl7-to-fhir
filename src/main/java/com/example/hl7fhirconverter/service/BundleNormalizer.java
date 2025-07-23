@@ -357,14 +357,8 @@ public class BundleNormalizer {
             }
         }
 
-        // If period exists without end, drop it and mark status unknown to avoid unrealistic long stay
-        if (enc.hasPeriod() && !enc.getPeriod().hasEnd()) {
-            enc.setPeriod(null);
-            enc.setStatus(Encounter.EncounterStatus.UNKNOWN);
-            for (Encounter.EncounterParticipantComponent pc : enc.getParticipant()) pc.setPeriod(null);
-            for (Encounter.EncounterLocationComponent lc : enc.getLocation()) lc.setPeriod(null);
-        } else if (enc.hasPeriod()) {
-            // copy period to components where missing
+        // If period exists propagate to participant/location
+        if (enc.hasPeriod()) {
             for (Encounter.EncounterParticipantComponent pc : enc.getParticipant()) {
                 if (!pc.hasPeriod()) pc.setPeriod(enc.getPeriod().copy());
             }
