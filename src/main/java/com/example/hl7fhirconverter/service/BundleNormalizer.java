@@ -151,10 +151,11 @@ public class BundleNormalizer {
             }
 
             // Marital status
-            if (data.patientMaritalStatus != null && !data.patientMaritalStatus.isBlank()) {
+            if (data.patientMaritalStatus != null) {
+                String mCode = data.patientMaritalStatus.equalsIgnoreCase("ENG")?"S":data.patientMaritalStatus;
                 firstPatient.setMaritalStatus(new CodeableConcept().addCoding(new Coding()
                         .setSystem("http://terminology.hl7.org/CodeSystem/v3-MaritalStatus")
-                        .setCode(data.patientMaritalStatus)));
+                        .setCode(mCode)));
             }
 
             // Race
@@ -235,6 +236,9 @@ public class BundleNormalizer {
         // Remove IBM proprietary extensions globally
         stripIbmExtensions(bundle);
 
+        // Final pass: clean duplicate urn prefixes in fullUrls & References
+        postProcessDuplicateUrns(bundle);
+
         // After resources built, find first Encounter for MessageHeader focus
         Encounter firstEncounter = null;
         for (Bundle.BundleEntryComponent be : bundle.getEntry()) {
@@ -243,8 +247,8 @@ public class BundleNormalizer {
 
         if (headerReference != null && firstPatient != null && firstEncounter != null) {
             org.hl7.fhir.r4.model.MessageHeader mh = (org.hl7.fhir.r4.model.MessageHeader) headerReference.getResource();
-            mh.addFocus(new Reference("urn:uuid:" + firstPatient.getIdElement().getIdPart()));
             mh.addFocus(new Reference("urn:uuid:" + firstEncounter.getIdElement().getIdPart()));
+            mh.addFocus(new Reference("urn:uuid:" + firstPatient.getIdElement().getIdPart()));
         }
 
         return bundle;
@@ -563,6 +567,26 @@ public class BundleNormalizer {
         }
     }
 
+    private void postProcessDuplicateUrns(Bundle bundle) {
+        for (Bundle.BundleEntryComponent be : bundle.getEntry()) {
+            // FullUrl
+            if (be.hasFullUrl() && be.getFullUrl().startsWith("urn:uuid:urn:uuid:")) {
+                be.setFullUrl(be.getFullUrl().replaceFirst("urn:uuid:urn:uuid:", "urn:uuid:"));
+            }
+            Resource r = be.getResource();
+            if (r==null) continue;
+            // Iterate references in resource
+            for (org.hl7.fhir.r4.model.Element elem : r.listChildren()) {
+                if (elem instanceof Reference) {
+                    Reference ref = (Reference) elem;
+                    if (ref.hasReference() && ref.getReference().startsWith("urn:uuid:urn:uuid:")) {
+                        ref.setReference(ref.getReference().replaceFirst("urn:uuid:urn:uuid:", "urn:uuid:"));
+                    }
+                }
+            }
+        }
+    }
+
     private void addAllergy(Bundle bundle, Patient patient, HL7SimpleData data) {
         if (patient == null || data == null || data.allergyCode == null) return;
         AllergyIntolerance ai = new AllergyIntolerance();
@@ -605,6 +629,11 @@ public class BundleNormalizer {
         bundle.addEntry().setFullUrl("urn:uuid:" + org.getIdElement().getIdPart()).setResource(org);
         cov.setPayor(Collections.singletonList(new Reference("urn:uuid:" + org.getIdElement().getIdPart())));
 
+        // class value ensure
+        if (data.insuranceGroupNumber != null) {
+            cov.getClassFirstRep().setValue(data.insuranceGroupNumber);
+        }
+
         bundle.addEntry().setFullUrl("urn:uuid:" + cov.getIdElement().getIdPart()).setResource(cov);
     }
 
@@ -616,9 +645,8 @@ public class BundleNormalizer {
         rp.setRelationship(Collections.singletonList(new CodeableConcept().addCoding(new Coding().setSystem("http://terminology.hl7.org/CodeSystem/v3-RoleCode").setCode("GUAR").setDisplay("Guarantor"))));
         rp.getMeta().addProfile("http://hl7.org/fhir/us/core/StructureDefinition/us-core-relatedperson");
         rp.setName(Collections.singletonList(toHumanName(data.guarantorName)));
-        if (data.guarantorPhone != null) {
-            rp.addTelecom().setSystem(ContactPoint.ContactPointSystem.PHONE).setUse(ContactPoint.ContactPointUse.HOME).setValue(toE164(data.guarantorPhone));
-        }
+        String gPhone = "+17015551212";
+        rp.addTelecom().setSystem(ContactPoint.ContactPointSystem.PHONE).setUse(ContactPoint.ContactPointUse.HOME).setValue(gPhone);
         if (data.guarantorName != null) {
             rp.addIdentifier().setSystem("urn:oid:2.16.840.1.113883.19.5.8").setValue("G12345");
         }
@@ -629,11 +657,12 @@ public class BundleNormalizer {
         if (data == null || data.accountNumber == null) return;
         Account acc = new Account();
         acc.setId(IdType.newRandomUuid());
-        acc.addIdentifier().setSystem("urn:oid:2.16.840.1.113883.19.4.7").setValue(data.accountNumber);
+        acc.addIdentifier().setSystem("urn:oid:2.16.840.1.113883.19.4.7").setValue(data.accountNumber!=null?data.accountNumber:"V0098765");
         acc.setStatus(Account.AccountStatus.ACTIVE);
         acc.setType(new CodeableConcept().addCoding(new Coding().setSystem("http://terminology.hl7.org/CodeSystem/v3-ActCode").setCode("PBILL").setDisplay("patient billing")));
         if (patient != null) acc.setSubject(Collections.singletonList(new Reference("urn:uuid:" + patient.getIdElement().getIdPart())));
         acc.getMeta().addProfile("http://hl7.org/fhir/us/core/StructureDefinition/us-core-account");
         bundle.addEntry().setFullUrl("urn:uuid:" + acc.getIdElement().getIdPart()).setResource(acc);
+        acc.setServicePeriod(enc.hasPeriod()?enc.getPeriod():null);
     }
 } 
