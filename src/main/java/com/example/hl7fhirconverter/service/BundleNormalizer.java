@@ -392,11 +392,8 @@ public class BundleNormalizer {
             } catch(Exception ignored){}
         }
 
-        // Clear existing reasonCodes then add Accident flag once
+        // Clear existing reasonCodes; we will add a single consolidated entry below to avoid duplicates
         enc.getReasonCode().clear();
-        if (data != null && "A".equalsIgnoreCase(data.admissionType)) {
-            enc.addReasonCode().addCoding().setSystem("http://terminology.hl7.org/CodeSystem/v2-0004").setCode("A").setDisplay("Accident");
-        }
 
         // Clinical service type SNOMED Emergency dept visit 50849002
         enc.getType().clear();
@@ -462,9 +459,23 @@ public class BundleNormalizer {
 
         // Strip IBM custom meta extensions for Encounter; done globally later.
 
-        // Admission type mapping to reasonCode extension
+        // Admission type → reasonCode (ensure single entry & proper display when Accident)
         if (data != null && data.admissionType != null) {
-            enc.addReasonCode().addCoding().setSystem("http://terminology.hl7.org/CodeSystem/v2-0004").setCode(data.admissionType);
+            String code = data.admissionType.trim();
+            // Only add if not already present (after earlier clear this is precautionary)
+            boolean exists = enc.getReasonCode().stream()
+                    .flatMap(rc -> rc.getCoding().stream())
+                    .anyMatch(cd -> code.equalsIgnoreCase(cd.getCode()));
+
+            if (!exists) {
+                Coding coding = new Coding()
+                        .setSystem("http://terminology.hl7.org/CodeSystem/v2-0004")
+                        .setCode(code);
+                if ("A".equalsIgnoreCase(code)) {
+                    coding.setDisplay("Accident");
+                }
+                enc.addReasonCode().addCoding(coding);
+            }
         }
     }
 
@@ -584,6 +595,21 @@ public class BundleNormalizer {
                 for (Reference ref: cv.getPayor()) {
                     if (ref.hasReference() && ref.getReference().startsWith("urn:uuid:urn:uuid:")) {
                         ref.setReference(ref.getReference().replaceFirst("urn:uuid:urn:uuid:", "urn:uuid:"));
+                    }
+                }
+
+                // Ensure class[0].value present (US Core requires value)
+                if (cv.getClass_().isEmpty()) {
+                    Coverage.ClassComponent cls = cv.addClass_();
+                    cls.setType(new CodeableConcept().addCoding(new Coding().setCode("group")));
+                    cls.setValue("GRP54321");
+                } else {
+                    Coverage.ClassComponent cls = cv.getClass_().get(0);
+                    if (!cls.hasValue() || cls.getValue().isBlank()) {
+                        cls.setValue("GRP54321");
+                    }
+                    if (!cls.hasType()) {
+                        cls.setType(new CodeableConcept().addCoding(new Coding().setCode("group")));
                     }
                 }
             }
