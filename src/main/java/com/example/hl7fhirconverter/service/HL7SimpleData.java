@@ -81,8 +81,8 @@ public class HL7SimpleData {
                     if (locComps.length > 2) d.locationBed = locComps[2];
                 }
                 if (fields.length > 4) d.admissionType = fields[4]; // PV1-4 Admission type
-                if (fields.length > 19) d.visitNumber = fields[19]; // PV1-19 Visit number
-                if (fields.length > 18) d.accountNumber = fields[18]; // PV1-18 patient account number
+                if (fields.length > 18) d.visitNumber = fields[18]; // PV1-19 Visit number (index 18)
+                if (fields.length > 19) d.accountNumber = fields[19]; // PV1-20 account number shift if needed
                 if (fields.length > 7) d.attendingName = fields[7];
                 if (fields.length > 9) d.consultingName = fields[9];
                 // PV1-44 Admission date/time

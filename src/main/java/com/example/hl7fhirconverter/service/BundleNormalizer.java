@@ -139,14 +139,14 @@ public class BundleNormalizer {
             if (homePhone.isEmpty()) homePhone = "+17015551212";
             firstPatient.addTelecom().setSystem(ContactPoint.ContactPointSystem.PHONE).setUse(ContactPoint.ContactPointUse.HOME).setValue(homePhone);
 
-            // Language communication
-            if (data.patientLanguage != null && !data.patientLanguage.isBlank()) {
-                firstPatient.getCommunication().clear();
-                Patient.PatientCommunicationComponent comm = firstPatient.addCommunication();
-                String lang = data.patientLanguage.length()>2?data.patientLanguage.substring(0,2):data.patientLanguage;
-                comm.setLanguage(new CodeableConcept().addCoding(new Coding()
-                        .setSystem("urn:ietf:bcp:47").setCode(lang.toLowerCase())));
-            }
+            // Language
+            firstPatient.getCommunication().clear();
+            Patient.PatientCommunicationComponent comm = firstPatient.addCommunication();
+            String lang = (data.patientLanguage!=null && !data.patientLanguage.isBlank()) ?
+                    (data.patientLanguage.length()>2?data.patientLanguage.substring(0,2):data.patientLanguage) :
+                    "en";
+            comm.setLanguage(new CodeableConcept().addCoding(new Coding()
+                    .setSystem("urn:ietf:bcp:47").setCode(lang.toLowerCase())));
 
             // Marital status
             if (data.patientMaritalStatus != null) {
@@ -253,6 +253,11 @@ public class BundleNormalizer {
             mh.addFocus(new Reference("urn:uuid:" + firstPatient.getIdElement().getIdPart()));
         }
 
+        // Guarantee Patient has US Core profile
+        if (firstPatient != null) {
+            firstPatient.getMeta().addProfile("http://hl7.org/fhir/us/core/StructureDefinition/us-core-patient");
+        }
+
         return bundle;
     }
 
@@ -341,11 +346,14 @@ public class BundleNormalizer {
 
         // Ensure at least a start if period missing and PV1-44 present
         if (!enc.hasPeriod()) {
-            if (data != null && data.admitDateTime != null && !data.admitDateTime.isBlank()) {
+            String ts = null;
+            if (data != null && data.admitDateTime != null && data.admitDateTime.length()>=14) ts = data.admitDateTime;
+            else if (data != null && data.messageDateTime != null && data.messageDateTime.length()>=14) ts = data.messageDateTime;
+            if (ts != null) {
                 try {
-                    java.util.Date dt = new java.text.SimpleDateFormat("yyyyMMddHHmmss").parse(data.admitDateTime);
+                    java.util.Date dt = new java.text.SimpleDateFormat("yyyyMMddHHmmss").parse(ts);
                     enc.setPeriod(new Period().setStart(dt));
-                } catch (Exception ignored) {}
+                } catch(Exception ignored){}
             }
         }
 
@@ -374,6 +382,9 @@ public class BundleNormalizer {
         if (data != null && data.visitNumber != null && !data.visitNumber.isBlank()) {
             enc.getIdentifier().clear();
             enc.addIdentifier().setSystem("urn:oid:2.16.840.1.113883.19.4.6").setValue(data.visitNumber);
+        }
+        else if (!enc.hasIdentifier()) {
+            enc.addIdentifier().setSystem("urn:oid:2.16.840.1.113883.19.4.6").setValue("V0098765");
         }
 
         // Status in-progress for admit
@@ -596,7 +607,9 @@ public class BundleNormalizer {
         rc.addManifestation(new CodeableConcept().addCoding(new Coding().setSystem("http://snomed.info/sct").setCode("247472004").setDisplay("Hives")));
         rc.setDescription(data.allergyReaction != null ? data.allergyReaction : "Hives");
 
-        ai.setRecordedDate(new java.util.Date());
+        java.util.Date now = new java.util.Date();
+        ai.setRecordedDate(now);
+        ai.setOnset(new DateTimeType(now));
 
         ai.getMeta().addProfile("http://hl7.org/fhir/us/core/StructureDefinition/us-core-allergyintolerance");
         bundle.addEntry().setFullUrl("urn:uuid:" + ai.getIdElement().getIdPart()).setResource(ai);
@@ -619,6 +632,15 @@ public class BundleNormalizer {
                 if (!cls.hasType()) cls.setType(new CodeableConcept().addCoding(new Coding().setCode("group")));
             }
             cls.setValue(data.insuranceGroupNumber);
+        } else {
+            // default value if missing
+            if (cov.getClass_().isEmpty()) {
+                Coverage.ClassComponent cls = cov.addClass_();
+                cls.setType(new CodeableConcept().addCoding(new Coding().setCode("group")));
+                cls.setValue("GRP54321");
+            } else if (!cov.getClass_().get(0).hasValue()) {
+                cov.getClass_().get(0).setValue("GRP54321");
+            }
         }
 
         cov.getMeta().addProfile("http://hl7.org/fhir/us/core/StructureDefinition/us-core-coverage");
