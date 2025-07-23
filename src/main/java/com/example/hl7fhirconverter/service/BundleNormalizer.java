@@ -372,20 +372,16 @@ public class BundleNormalizer {
             enc.setLength(null);
         }
 
-        // Identifier mapping from visit number
-        if (data != null && data.visitNumber != null && !data.visitNumber.isBlank()) {
-            enc.getIdentifier().clear();
-            enc.addIdentifier()
-                .setSystem("urn:id:TRINITY_HEALTH_MINOT")
-                .setValue(data.visitNumber)
-                .setAssigner(new Reference().setDisplay("TRINITY HEALTH MINOT"));
-        }
-        else if (!enc.hasIdentifier()) {
-            enc.addIdentifier()
-                .setSystem("urn:id:TRINITY_HEALTH_MINOT")
-                .setValue("V0098765")
-                .setAssigner(new Reference().setDisplay("TRINITY HEALTH MINOT"));
-        }
+        // Always reset identifier(s) then populate from PV1-19 or fallback default
+        enc.getIdentifier().clear();
+        String visitId = (data != null && data.visitNumber != null && !data.visitNumber.isBlank())
+                ? data.visitNumber
+                : "V0098765";
+
+        enc.addIdentifier()
+            .setSystem("urn:id:TRINITY_HEALTH_MINOT")
+            .setValue(visitId)
+            .setAssigner(new Reference().setDisplay("TRINITY HEALTH MINOT"));
 
         // Status in-progress for admit
         enc.setStatus(Encounter.EncounterStatus.INPROGRESS);
