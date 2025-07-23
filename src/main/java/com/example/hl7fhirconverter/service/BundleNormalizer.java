@@ -573,12 +573,10 @@ public class BundleNormalizer {
             if (be.hasFullUrl() && be.getFullUrl().startsWith("urn:uuid:urn:uuid:")) {
                 be.setFullUrl(be.getFullUrl().replaceFirst("urn:uuid:urn:uuid:", "urn:uuid:"));
             }
-            Resource r = be.getResource();
-            if (r==null) continue;
-            // Iterate references in resource
-            for (org.hl7.fhir.r4.model.Element elem : r.listChildren()) {
-                if (elem instanceof Reference) {
-                    Reference ref = (Reference) elem;
+            // simple payor reference fix specific cases
+            if (be.getResource() instanceof Coverage) {
+                Coverage cv = (Coverage) be.getResource();
+                for (Reference ref: cv.getPayor()) {
                     if (ref.hasReference() && ref.getReference().startsWith("urn:uuid:urn:uuid:")) {
                         ref.setReference(ref.getReference().replaceFirst("urn:uuid:urn:uuid:", "urn:uuid:"));
                     }
@@ -611,9 +609,13 @@ public class BundleNormalizer {
         cov.setStatus(Coverage.CoverageStatus.ACTIVE);
         cov.setBeneficiary(new Reference("urn:uuid:" + patient.getIdElement().getIdPart()));
         if (data.insuranceGroupNumber != null) {
-            Coverage.ClassComponent cls = cov.addClass_();
-            cls.setType(new CodeableConcept().addCoding(new Coding().setCode("group")));
-            cls.setValue(data.insuranceGroupNumber);
+            if (cov.getClass_().isEmpty()) {
+                Coverage.ClassComponent cls = cov.addClass_();
+                cls.setType(new CodeableConcept().addCoding(new Coding().setCode("group")));
+                cls.setValue(data.insuranceGroupNumber);
+            } else {
+                cov.getClass_().get(0).setValue(data.insuranceGroupNumber);
+            }
         }
 
         cov.getMeta().addProfile("http://hl7.org/fhir/us/core/StructureDefinition/us-core-coverage");
@@ -629,10 +631,7 @@ public class BundleNormalizer {
         bundle.addEntry().setFullUrl("urn:uuid:" + org.getIdElement().getIdPart()).setResource(org);
         cov.setPayor(Collections.singletonList(new Reference("urn:uuid:" + org.getIdElement().getIdPart())));
 
-        // class value ensure
-        if (data.insuranceGroupNumber != null) {
-            cov.getClassFirstRep().setValue(data.insuranceGroupNumber);
-        }
+        // class value ensured below (logic handles missing class)
 
         bundle.addEntry().setFullUrl("urn:uuid:" + cov.getIdElement().getIdPart()).setResource(cov);
     }
@@ -663,6 +662,5 @@ public class BundleNormalizer {
         if (patient != null) acc.setSubject(Collections.singletonList(new Reference("urn:uuid:" + patient.getIdElement().getIdPart())));
         acc.getMeta().addProfile("http://hl7.org/fhir/us/core/StructureDefinition/us-core-account");
         bundle.addEntry().setFullUrl("urn:uuid:" + acc.getIdElement().getIdPart()).setResource(acc);
-        acc.setServicePeriod(enc.hasPeriod()?enc.getPeriod():null);
     }
 } 
