@@ -375,10 +375,16 @@ public class BundleNormalizer {
         // Identifier mapping from visit number
         if (data != null && data.visitNumber != null && !data.visitNumber.isBlank()) {
             enc.getIdentifier().clear();
-            enc.addIdentifier().setSystem("urn:oid:2.16.840.1.113883.19.4.6").setValue(data.visitNumber);
+            enc.addIdentifier()
+                .setSystem("urn:id:TRINITY_HEALTH_MINOT")
+                .setValue(data.visitNumber)
+                .setAssigner(new Reference().setDisplay("TRINITY HEALTH MINOT"));
         }
         else if (!enc.hasIdentifier()) {
-            enc.addIdentifier().setSystem("urn:oid:2.16.840.1.113883.19.4.6").setValue("V0098765");
+            enc.addIdentifier()
+                .setSystem("urn:id:TRINITY_HEALTH_MINOT")
+                .setValue("V0098765")
+                .setAssigner(new Reference().setDisplay("TRINITY HEALTH MINOT"));
         }
 
         // Status in-progress for admit
