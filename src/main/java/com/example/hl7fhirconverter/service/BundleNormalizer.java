@@ -619,7 +619,9 @@ public class BundleNormalizer {
                         cls.setValue("GRP54321");
                     }
                     if (!cls.hasType()) {
-                        cls.setType(new CodeableConcept().addCoding(new Coding().setCode("group")));
+                        cls.setType(new CodeableConcept().addCoding(new Coding()
+                                .setSystem("http://terminology.hl7.org/CodeSystem/coverage-class")
+                                .setCode("group")));
                     }
                 }
             }
@@ -656,17 +658,25 @@ public class BundleNormalizer {
             Coverage.ClassComponent cls;
             if (cov.getClass_().isEmpty()) {
                 cls = cov.addClass_();
-                cls.setType(new CodeableConcept().addCoding(new Coding().setCode("group")));
+                cls.setType(new CodeableConcept().addCoding(new Coding()
+                        .setSystem("http://terminology.hl7.org/CodeSystem/coverage-class")
+                        .setCode("group")));
             } else {
                 cls = cov.getClass_().get(0);
-                if (!cls.hasType()) cls.setType(new CodeableConcept().addCoding(new Coding().setCode("group")));
+                if (!cls.hasType()) {
+                    cls.setType(new CodeableConcept().addCoding(new Coding()
+                            .setSystem("http://terminology.hl7.org/CodeSystem/coverage-class")
+                            .setCode("group")));
+                }
             }
             cls.setValue(data.insuranceGroupNumber);
         } else {
             // default value if missing
             if (cov.getClass_().isEmpty()) {
                 Coverage.ClassComponent cls = cov.addClass_();
-                cls.setType(new CodeableConcept().addCoding(new Coding().setCode("group")));
+                cls.setType(new CodeableConcept().addCoding(new Coding()
+                        .setSystem("http://terminology.hl7.org/CodeSystem/coverage-class")
+                        .setCode("group")));
                 cls.setValue("GRP54321");
             } else if (!cov.getClass_().get(0).hasValue()) {
                 cov.getClass_().get(0).setValue("GRP54321");
