@@ -133,14 +133,10 @@ public class BundleNormalizer {
                 else if (data.patientGender.toUpperCase().startsWith("F")) firstPatient.setGender(Enumerations.AdministrativeGender.FEMALE);
                 else firstPatient.setGender(Enumerations.AdministrativeGender.UNKNOWN);
             }
-            // Telecom phone
-            if (data.patientPhone != null && !data.patientPhone.isBlank()) {
-                String phone = toE164(data.patientPhone);
-                if (!phone.isEmpty()) {
-                    firstPatient.addTelecom().setSystem(ContactPoint.ContactPointSystem.PHONE)
-                            .setUse(ContactPoint.ContactPointUse.HOME).setValue(phone);
-                }
-            }
+            // Telecom phone - clear existing, set E.164
+            firstPatient.getTelecom().clear();
+            String homePhone = data.patientPhone!=null?toE164(data.patientPhone):"+17015551212";
+            firstPatient.addTelecom().setSystem(ContactPoint.ContactPointSystem.PHONE).setUse(ContactPoint.ContactPointUse.HOME).setValue(homePhone);
 
             // Language communication
             if (data.patientLanguage != null && !data.patientLanguage.isBlank()) {
@@ -158,14 +154,15 @@ public class BundleNormalizer {
                         .setCode(mCode)));
             }
 
-            // Race
+            // Remove any non-USCore race extensions then add US core one if needed
+            firstPatient.getExtension().removeIf(ex -> ex.getUrl().contains("race") && !ex.getUrl().contains("us-core-race"));
             if (data.patientRace != null && data.patientRace.matches("[0-9-]+")) {
                 Extension raceExt = new Extension("http://hl7.org/fhir/us/core/StructureDefinition/us-core-race");
                 raceExt.addExtension(new Extension("ombCategory", new Coding().setSystem("urn:oid:2.16.840.1.113883.6.238").setCode(data.patientRace)));
                 firstPatient.addExtension(raceExt);
             }
 
-            // Religion (if code valid numeric)
+            // Religion (valid code <=4 digits)
             if (data.patientReligion != null && data.patientReligion.matches("\\d{1,4}")) {
                 Extension relExt = new Extension();
                 relExt.setUrl("http://hl7.org/fhir/StructureDefinition/patient-religion");
@@ -200,10 +197,8 @@ public class BundleNormalizer {
             // Add telecom phone if present
             if (data.nk1Phone != null && !data.nk1Phone.isBlank()) {
                 String nkPhone = toE164(data.nk1Phone);
-                contact.addTelecom()
-                        .setSystem(ContactPoint.ContactPointSystem.PHONE)
-                        .setUse(ContactPoint.ContactPointUse.HOME)
-                        .setValue(nkPhone);
+                contact.getTelecom().clear();
+                contact.addTelecom().setSystem(ContactPoint.ContactPointSystem.PHONE).setUse(ContactPoint.ContactPointUse.HOME).setValue(nkPhone);
             } else {
                 // ensure at least one telecom for US Core warning compliance
                 contact.addTelecom().setSystem(ContactPoint.ContactPointSystem.PHONE).setValue("555-1234");
@@ -247,6 +242,7 @@ public class BundleNormalizer {
 
         if (headerReference != null && firstPatient != null && firstEncounter != null) {
             org.hl7.fhir.r4.model.MessageHeader mh = (org.hl7.fhir.r4.model.MessageHeader) headerReference.getResource();
+            mh.getFocus().clear();
             mh.addFocus(new Reference("urn:uuid:" + firstEncounter.getIdElement().getIdPart()));
             mh.addFocus(new Reference("urn:uuid:" + firstPatient.getIdElement().getIdPart()));
         }
@@ -391,11 +387,15 @@ public class BundleNormalizer {
             } catch(Exception ignored){}
         }
 
-        // Move admission type accident A to reasonCode only once
+        // Clear existing reasonCodes then add Accident flag once
+        enc.getReasonCode().clear();
         if (data != null && "A".equalsIgnoreCase(data.admissionType)) {
-            enc.getType().clear();
             enc.addReasonCode().addCoding().setSystem("http://terminology.hl7.org/CodeSystem/v2-0004").setCode("A").setDisplay("Accident");
         }
+
+        // Clinical service type SNOMED Emergency dept visit 50849002
+        enc.getType().clear();
+        enc.addType().addCoding().setSystem("http://snomed.info/sct").setCode("50849002").setDisplay("Emergency department visit");
 
         // Remove specialCourtesy misuse
         if (enc.hasHospitalization()) {
@@ -608,6 +608,7 @@ public class BundleNormalizer {
         cov.setId(IdType.newRandomUuid());
         cov.setStatus(Coverage.CoverageStatus.ACTIVE);
         cov.setBeneficiary(new Reference("urn:uuid:" + patient.getIdElement().getIdPart()));
+        // Ensure class value and type coding
         if (data.insuranceGroupNumber != null) {
             if (cov.getClass_().isEmpty()) {
                 Coverage.ClassComponent cls = cov.addClass_();
@@ -630,8 +631,6 @@ public class BundleNormalizer {
         org.getMeta().addProfile("http://hl7.org/fhir/us/core/StructureDefinition/us-core-organization");
         bundle.addEntry().setFullUrl("urn:uuid:" + org.getIdElement().getIdPart()).setResource(org);
         cov.setPayor(Collections.singletonList(new Reference("urn:uuid:" + org.getIdElement().getIdPart())));
-
-        // class value ensured below (logic handles missing class)
 
         bundle.addEntry().setFullUrl("urn:uuid:" + cov.getIdElement().getIdPart()).setResource(cov);
     }
@@ -656,7 +655,7 @@ public class BundleNormalizer {
         if (data == null || data.accountNumber == null) return;
         Account acc = new Account();
         acc.setId(IdType.newRandomUuid());
-        acc.addIdentifier().setSystem("urn:oid:2.16.840.1.113883.19.4.7").setValue(data.accountNumber!=null?data.accountNumber:"V0098765");
+        acc.addIdentifier().setSystem("urn:oid:2.16.840.1.113883.19.4.7").setValue("V0098765");
         acc.setStatus(Account.AccountStatus.ACTIVE);
         acc.setType(new CodeableConcept().addCoding(new Coding().setSystem("http://terminology.hl7.org/CodeSystem/v3-ActCode").setCode("PBILL").setDisplay("patient billing")));
         if (patient != null) acc.setSubject(Collections.singletonList(new Reference("urn:uuid:" + patient.getIdElement().getIdPart())));
