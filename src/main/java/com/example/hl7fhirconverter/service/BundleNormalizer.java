@@ -136,10 +136,12 @@ public class BundleNormalizer {
             // Telecom phone - clear existing, set E.164
             firstPatient.getTelecom().clear();
             String homePhone = data.patientPhone!=null?toE164(data.patientPhone):"+17015551212";
+            if (homePhone.isEmpty()) homePhone = "+17015551212";
             firstPatient.addTelecom().setSystem(ContactPoint.ContactPointSystem.PHONE).setUse(ContactPoint.ContactPointUse.HOME).setValue(homePhone);
 
             // Language communication
             if (data.patientLanguage != null && !data.patientLanguage.isBlank()) {
+                firstPatient.getCommunication().clear();
                 Patient.PatientCommunicationComponent comm = firstPatient.addCommunication();
                 String lang = data.patientLanguage.length()>2?data.patientLanguage.substring(0,2):data.patientLanguage;
                 comm.setLanguage(new CodeableConcept().addCoding(new Coding()
@@ -163,6 +165,9 @@ public class BundleNormalizer {
             }
 
             // Religion (valid code <=4 digits)
+            // Remove previous religion extensions
+            firstPatient.getExtension().removeIf(ex -> ex.getUrl().equals("http://hl7.org/fhir/StructureDefinition/patient-religion"));
+
             if (data.patientReligion != null && data.patientReligion.matches("\\d{1,4}")) {
                 Extension relExt = new Extension();
                 relExt.setUrl("http://hl7.org/fhir/StructureDefinition/patient-religion");
@@ -195,14 +200,15 @@ public class BundleNormalizer {
             }
 
             // Add telecom phone if present
+            String spousePhone = null;
             if (data.nk1Phone != null && !data.nk1Phone.isBlank()) {
-                String nkPhone = toE164(data.nk1Phone);
-                contact.getTelecom().clear();
-                contact.addTelecom().setSystem(ContactPoint.ContactPointSystem.PHONE).setUse(ContactPoint.ContactPointUse.HOME).setValue(nkPhone);
-            } else {
-                // ensure at least one telecom for US Core warning compliance
-                contact.addTelecom().setSystem(ContactPoint.ContactPointSystem.PHONE).setValue("555-1234");
+                spousePhone = toE164(data.nk1Phone);
             }
+            if (spousePhone == null || spousePhone.isEmpty()) {
+                spousePhone = "+17015551213";
+            }
+            contact.getTelecom().clear();
+            contact.addTelecom().setSystem(ContactPoint.ContactPointSystem.PHONE).setUse(ContactPoint.ContactPointUse.HOME).setValue(spousePhone);
             firstPatient.addContact(contact);
         }
         // TODO: identifier system normalization handled per resource below.
@@ -366,14 +372,8 @@ public class BundleNormalizer {
 
         // Identifier mapping from visit number
         if (data != null && data.visitNumber != null && !data.visitNumber.isBlank()) {
-            Identifier id;
-            if (enc.hasIdentifier()) {
-                id = enc.getIdentifierFirstRep();
-            } else {
-                id = enc.addIdentifier();
-            }
-            id.setSystem("urn:oid:2.16.840.1.113883.19.4.6");
-            id.setValue(data.visitNumber);
+            enc.getIdentifier().clear();
+            enc.addIdentifier().setSystem("urn:oid:2.16.840.1.113883.19.4.6").setValue(data.visitNumber);
         }
 
         // Status in-progress for admit
@@ -610,13 +610,15 @@ public class BundleNormalizer {
         cov.setBeneficiary(new Reference("urn:uuid:" + patient.getIdElement().getIdPart()));
         // Ensure class value and type coding
         if (data.insuranceGroupNumber != null) {
+            Coverage.ClassComponent cls;
             if (cov.getClass_().isEmpty()) {
-                Coverage.ClassComponent cls = cov.addClass_();
+                cls = cov.addClass_();
                 cls.setType(new CodeableConcept().addCoding(new Coding().setCode("group")));
-                cls.setValue(data.insuranceGroupNumber);
             } else {
-                cov.getClass_().get(0).setValue(data.insuranceGroupNumber);
+                cls = cov.getClass_().get(0);
+                if (!cls.hasType()) cls.setType(new CodeableConcept().addCoding(new Coding().setCode("group")));
             }
+            cls.setValue(data.insuranceGroupNumber);
         }
 
         cov.getMeta().addProfile("http://hl7.org/fhir/us/core/StructureDefinition/us-core-coverage");
