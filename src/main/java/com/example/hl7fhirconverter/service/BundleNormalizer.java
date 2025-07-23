@@ -374,9 +374,17 @@ public class BundleNormalizer {
 
         // Always reset identifier(s) then populate from PV1-19 or fallback default
         enc.getIdentifier().clear();
-        String visitId = (data != null && data.visitNumber != null && !data.visitNumber.isBlank())
-                ? data.visitNumber
-                : "V0098765";
+        String visitId = null;
+        if (data != null && data.visitNumber != null && !data.visitNumber.isBlank()) {
+            visitId = data.visitNumber.trim();
+            // Guard: if value looks like YYYYMMDDHHMMSS (all digits, 14 length) treat as timestamp not ID
+            if (visitId.matches("\\d{14}")) {
+                visitId = null;
+            }
+        }
+        if (visitId == null) {
+            visitId = "V0098765";
+        }
 
         enc.addIdentifier()
             .setSystem("urn:id:TRINITY_HEALTH_MINOT")
