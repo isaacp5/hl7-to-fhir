@@ -31,6 +31,7 @@ public class HL7SimpleData {
     public String patientLanguage;
     public String patientMaritalStatus;
     public String patientReligion;
+    public String patientRace;
 
     // Encounter
     public String visitNumber;
@@ -41,6 +42,7 @@ public class HL7SimpleData {
     public String allergyReaction;
 
     // Insurance IN1
+    public String insurancePayerId;
     public String insurancePayerName;
     public String insuranceGroupNumber;
 
@@ -95,7 +97,8 @@ public class HL7SimpleData {
                 if (fields.length > 5) d.allergyReaction = fields[5]; // AL1-5 Reaction
             } else if (line.startsWith("IN1")) {
                 String[] fields = line.split("\\|");
-                if (fields.length > 3) d.insurancePayerName = fields[3]; // IN1-4 Payer name
+                if (fields.length > 3) d.insurancePayerId = fields[3]; // IN1-3 payer id
+                if (fields.length > 4) d.insurancePayerName = fields[4]; // IN1-4 payer name
                 if (fields.length > 8) d.insuranceGroupNumber = fields[8]; // IN1-9 Group number
             } else if (line.startsWith("GT1")) {
                 String[] fields = line.split("\\|");
@@ -117,6 +120,7 @@ public class HL7SimpleData {
                 }
                 if (fields.length > 8) d.patientGender = fields[8].trim();
                 if (fields.length > 12) d.patientPhone = fields[12]; // PID-13
+                if (fields.length > 10) d.patientRace = fields[10]; // PID-10 race
                 if (fields.length > 14) d.patientLanguage = fields[14]; // PID-15
                 if (fields.length > 15) d.patientMaritalStatus = fields[15]; // PID-16
                 if (fields.length > 16) d.patientReligion = fields[16]; // PID-17

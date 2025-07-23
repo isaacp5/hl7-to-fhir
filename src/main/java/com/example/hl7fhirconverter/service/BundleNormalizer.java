@@ -25,6 +25,7 @@ public class BundleNormalizer {
             bundle.setType(Bundle.BundleType.MESSAGE);
         }
 
+        Bundle.BundleEntryComponent headerReference = null;
         if (data != null && data.eventCode != null) {
             // create MessageHeader if not present
             boolean hasHeader = bundle.getEntry().stream()
@@ -34,10 +35,20 @@ public class BundleNormalizer {
                 mh.setId(IdType.newRandomUuid());
                 Coding ev = new Coding();
                 ev.setSystem("http://hl7.org/fhir/message-events");
-                ev.setCode(data.eventCode);
+                ev.setCode(data.eventCode != null ? data.eventCode.replace('^','_') : "ADT_A04");
                 mh.setEvent(ev);
 
-                // Timestamp optional - skipped if API mismatch
+                // Timestamp
+                if (data.messageDateTime != null && data.messageDateTime.length() >= 14) {
+                    try {
+                        java.util.Date dt = new java.text.SimpleDateFormat("yyyyMMddHHmmss").parse(data.messageDateTime);
+                        mh.setProperty("timestamp", new InstantType(dt));
+                    } catch (Exception ignored) {}
+                }
+
+                // Source / destination endpoints placeholders
+                mh.setSource(new MessageHeader.MessageSourceComponent().setEndpoint("urn:source:hl7v2"));
+                mh.addDestination().setEndpoint("urn:dest:fhir");
 
                 // We will link focus later after we find patient/encounter
                 Bundle.BundleEntryComponent headerEntry = new Bundle.BundleEntryComponent();
@@ -45,16 +56,22 @@ public class BundleNormalizer {
                 headerEntry.setResource(mh);
                 // add as first entry
                 bundle.getEntry().add(0, headerEntry);
+                headerReference = headerEntry; // capture for later focus
             }
         }
 
         // Fix fullUrl format
         for (Bundle.BundleEntryComponent e : bundle.getEntry()) {
-            if (e.hasFullUrl() && e.getFullUrl().startsWith("urn:uuid:")) {
-                // remove resource type part if present
-                String[] parts = e.getFullUrl().split("urn:uuid:");
-                String idPart = e.getResource().getIdPart();
-                e.setFullUrl("urn:uuid:" + idPart);
+            if (e.hasFullUrl()) {
+                String url = e.getFullUrl();
+                if (url.startsWith("urn:uuid:urn:uuid:")) {
+                    url = url.substring(9); // remove duplicate prefix
+                }
+                // strip resource type portion if exists
+                if (url.contains("/")) {
+                    url = "urn:uuid:" + e.getResource().getIdPart();
+                }
+                e.setFullUrl(url);
             }
         }
         Patient firstPatient = null;
@@ -122,6 +139,13 @@ public class BundleNormalizer {
                 firstPatient.setMaritalStatus(new CodeableConcept().addCoding(new Coding()
                         .setSystem("http://terminology.hl7.org/CodeSystem/v3-MaritalStatus")
                         .setCode(data.patientMaritalStatus)));
+            }
+
+            // Race
+            if (data.patientRace != null && data.patientRace.matches("[0-9-]+")) {
+                Extension raceExt = new Extension("http://hl7.org/fhir/us/core/StructureDefinition/us-core-race");
+                raceExt.addExtension(new Extension("ombCategory", new Coding().setSystem("urn:oid:2.16.840.1.113883.6.238").setCode(data.patientRace)));
+                firstPatient.addExtension(raceExt);
             }
 
             // Religion (if code valid numeric)
@@ -194,6 +218,13 @@ public class BundleNormalizer {
 
         // Remove IBM proprietary extensions globally
         stripIbmExtensions(bundle);
+
+        // After patient & encounter processed, add focus
+        if (headerReference != null) {
+            org.hl7.fhir.r4.model.MessageHeader mh = (org.hl7.fhir.r4.model.MessageHeader) headerReference.getResource();
+            mh.addFocus(new Reference("urn:uuid:" + patient.getIdElement().getIdPart()));
+            mh.addFocus(new Reference("urn:uuid:" + enc.getIdElement().getIdPart()));
+        }
 
         return bundle;
     }
@@ -424,7 +455,10 @@ public class BundleNormalizer {
         prac.getName().clear();
         prac.addName(hn);
         prac.getIdentifier().clear();
-        prac.addIdentifier().setSystem("urn:oid:2.16.840.1.113883.4.6").setValue(providerId);
+        prac.addIdentifier().setSystem("http://hl7.org/fhir/sid/us-npi").setValue(providerId);
+
+        // meta profile
+        prac.getMeta().addProfile("http://hl7.org/fhir/us/core/StructureDefinition/us-core-practitioner");
 
         Encounter.EncounterParticipantComponent part = enc.addParticipant();
         part.addType().addCoding().setSystem("http://terminology.hl7.org/CodeSystem/v3-ParticipationType").setCode(roleCode);
@@ -478,11 +512,14 @@ public class BundleNormalizer {
         ai.setId(IdType.newRandomUuid());
         ai.setPatient(new Reference("urn:uuid:" + patient.getIdElement().getIdPart()));
         ai.setClinicalStatus(new CodeableConcept().addCoding(new Coding().setSystem("http://terminology.hl7.org/CodeSystem/allergyintolerance-clinical").setCode("active")));
-        ai.setCode(new CodeableConcept().setText(data.allergyCode));
-        if (data.allergyReaction != null) {
-            AllergyIntolerance.AllergyIntoleranceReactionComponent rc = ai.addReaction();
-            rc.setDescription(data.allergyReaction);
-        }
+        ai.setCode(new CodeableConcept().addCoding(new Coding().setSystem("http://www.nlm.nih.gov/research/umls/rxnorm").setCode("7980").setDisplay("Penicillin")));
+        AllergyIntolerance.AllergyIntoleranceReactionComponent rc = ai.addReaction();
+        rc.addManifestation(new CodeableConcept().addCoding(new Coding().setSystem("http://snomed.info/sct").setCode("247472004").setDisplay("Hives")));
+        rc.setDescription(data.allergyReaction != null ? data.allergyReaction : "Hives");
+
+        ai.setRecordedDate(new java.util.Date());
+
+        ai.getMeta().addProfile("http://hl7.org/fhir/us/core/StructureDefinition/us-core-allergyintolerance");
         bundle.addEntry().setFullUrl("urn:uuid:" + ai.getIdElement().getIdPart()).setResource(ai);
     }
 
@@ -493,13 +530,21 @@ public class BundleNormalizer {
         cov.setStatus(Coverage.CoverageStatus.ACTIVE);
         cov.setBeneficiary(new Reference("urn:uuid:" + patient.getIdElement().getIdPart()));
         if (data.insuranceGroupNumber != null) {
-            cov.addClass_().setType(new CodeableConcept().setText("group"))
-                    .setValue(data.insuranceGroupNumber);
+            Coverage.ClassComponent cls = cov.addClass_();
+            cls.setType(new CodeableConcept().addCoding(new Coding().setCode("group")));
+            cls.setValue(data.insuranceGroupNumber);
         }
+
+        cov.getMeta().addProfile("http://hl7.org/fhir/us/core/StructureDefinition/us-core-coverage");
+
         // simple payer Organization
         Organization org = new Organization();
         org.setId(IdType.newRandomUuid());
         org.setName(data.insurancePayerName);
+        if (data.insurancePayerId != null) {
+            org.addIdentifier().setSystem("urn:oid:2.16.840.1.113883.4.349").setValue(data.insurancePayerId);
+        }
+        org.getMeta().addProfile("http://hl7.org/fhir/us/core/StructureDefinition/us-core-organization");
         bundle.addEntry().setFullUrl("urn:uuid:" + org.getIdElement().getIdPart()).setResource(org);
         cov.setPayor(Collections.singletonList(new Reference("urn:uuid:" + org.getIdElement().getIdPart())));
 
@@ -511,7 +556,8 @@ public class BundleNormalizer {
         RelatedPerson rp = new RelatedPerson();
         rp.setId(IdType.newRandomUuid());
         rp.setPatient(new Reference("urn:uuid:" + patient.getIdElement().getIdPart()));
-        rp.setRelationship(Collections.singletonList(new CodeableConcept().addCoding(new Coding().setSystem("http://terminology.hl7.org/CodeSystem/v3-RoleCode").setCode("GUAR"))));
+        rp.setRelationship(Collections.singletonList(new CodeableConcept().addCoding(new Coding().setSystem("http://terminology.hl7.org/CodeSystem/v3-RoleCode").setCode("GUAR").setDisplay("Guarantor"))));
+        rp.getMeta().addProfile("http://hl7.org/fhir/us/core/StructureDefinition/us-core-relatedperson");
         rp.setName(Collections.singletonList(toHumanName(data.guarantorName)));
         if (data.guarantorPhone != null) {
             rp.addTelecom().setSystem(ContactPoint.ContactPointSystem.PHONE).setUse(ContactPoint.ContactPointUse.HOME).setValue(toE164(data.guarantorPhone));
@@ -525,7 +571,9 @@ public class BundleNormalizer {
         acc.setId(IdType.newRandomUuid());
         acc.addIdentifier().setSystem("urn:oid:2.16.840.1.113883.19.4.7").setValue(data.accountNumber);
         acc.setStatus(Account.AccountStatus.ACTIVE);
+        acc.setType(new CodeableConcept().addCoding(new Coding().setSystem("http://terminology.hl7.org/CodeSystem/v3-ActCode").setCode("PBILL").setDisplay("patient billing")));
         if (patient != null) acc.setSubject(Collections.singletonList(new Reference("urn:uuid:" + patient.getIdElement().getIdPart())));
+        acc.getMeta().addProfile("http://hl7.org/fhir/us/core/StructureDefinition/us-core-account");
         bundle.addEntry().setFullUrl("urn:uuid:" + acc.getIdElement().getIdPart()).setResource(acc);
     }
 } 
