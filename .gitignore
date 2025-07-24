@@ -1,3 +1,42 @@
-bundlenormalizer.class
-hl7simpledata.class
-createdfiles.lst
+# Java / Maven
+/target/
+**/target/
+*.class
+*.jar
+*.war
+*.ear
+
+# Maven status / build directories
+.mvn/
+!/.mvn/wrapper/maven-wrapper.jar
+
+# Logs
+*.log
+
+# IDE files
+.idea/
+*.iml
+.classpath
+.project
+.settings/
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Node / React (if UI lives here later)
+node_modules/
+/dist/
+/build/
+.env
+
+# Generated lists from Maven compiler plugin
+*.lst
+
+# Misc
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# End of file
