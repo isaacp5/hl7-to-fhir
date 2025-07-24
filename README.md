@@ -1,35 +1,92 @@
-# HL7 v2 ➜ FHIR Converter (MVP)
+# HL7 v2 ➜ FHIR Converter
 
-Minimal Spring Boot service that exposes a single endpoint to translate HL7 v2 messages into FHIR Bundles using the [LinuxForHealth/hl7v2-fhir-converter](https://github.com/LinuxForHealth/hl7v2-fhir-converter) library.  
-A dead-simple HTML page is served from `/` for manual testing.
+Spring&nbsp;Boot microservice that converts inbound **HL7 v2** messages (e.g. ADT, ORU, ORM) into **FHIR R4 Bundles** and post-processes them so they pass strict validation (US Core, IPS, etc.).
 
-## Quick start
+Typical use-cases:
+* Hospital interface engines that need FHIR output instead of HL7 v2.
+* Analytics / data-warehouse pipelines that standardise clinical data on FHIR.
+* Proof-of-concept projects exploring LinuxForHealth’s `hl7v2-fhir-converter`.
+
+The service exposes a single REST endpoint and (optionally) serves a React + TypeScript UI for manual testing.
+
+---
+## Features
+
+* **Stateless conversion** – sends HL7 string, receives FHIR JSON.
+* **US Core normalisation** – extra step fixes identifiers, codes, extensions, etc.
+* **Swagger / OpenAPI** docs automatically generated.
+* **Docker-ready** fat-jar → small alpine image (<150 MB).
+
+---
+## Quick Start (local)
 
 ```bash
-# build & run
-mvn spring-boot:run
-# then open http://localhost:8080
+# 1. clone & enter the repo
+$ git clone https://github.com/<you>/hl7-v2-fhir-converter.git
+$ cd hl7-v2-fhir-converter
+
+# 2. run directly with Maven (hot-reload)
+$ ./mvnw spring-boot:run
+# ⇒ http://localhost:8080
 ```
 
-### API
-
+Call the API:
+```bash
+curl -X POST http://localhost:8080/api/convert \
+     -H "Content-Type: text/plain" \
+     --data @sample.hl7
 ```
+You’ll get a FHIR Bundle JSON back.
+
+---
+## Building a Stand-Alone Jar
+
+```bash
+./mvnw clean package
+java -jar target/hl7-fhir-converter-*.jar
+```
+
+---
+## Running with Docker
+
+```bash
+# build (multi-stage dockerfile already present)
+docker build -t hl7-converter .
+# run
+docker run -p 8080:8080 hl7-converter
+```
+
+---
+## REST API
+
+```http
 POST /api/convert
 Content-Type: text/plain
 Body: <raw HL7 v2 message>
-→ 200 OK
-  JSON body with the converted FHIR Bundle
+---
+200 OK
+Content-Type: application/fhir+json
+Body: FHIR Bundle
 ```
 
-## Packaging
+OpenAPI JSON: `GET /v3/api-docs`  │  Swagger UI: `GET /swagger-ui.html`
 
+---
+## Optional React + TypeScript Front-End
+
+A minimal SPA lives in `ui/` (not committed by default). Generate one with:
 ```bash
-mvn clean package
-java -jar target/hl7-fhir-converter-0.1.0.jar
+npx create-react-app ui --template typescript
 ```
+Point the proxy at `http://localhost:8080` and call `/api/convert` as shown in `src/api.ts`.
+When you run `npm run build`, copy the static files to `src/main/resources/static/` so Spring serves them alongside the API.
 
-## Notes
+---
+## Requirements
 
-* Java 17+, Maven 3.9+.
-* No persistence – conversion happens in-memory and the result is streamed back immediately.
-* The UI is intentionally minimal; styling can be enhanced later. 
+* Java 17+
+* Maven 3.8+
+
+---
+## License
+MIT 
