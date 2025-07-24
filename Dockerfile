@@ -10,7 +10,7 @@ RUN mvn -q package -DskipTests && \
 FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
 COPY --from=build /workspace/app.jar app.jar
-# Railway sets $PORT; Spring Boot now respects it via application.properties
+# Railway sets $PORT; bind Spring directly to it
 ENV JAVA_OPTS=""
-EXPOSE 8081
-ENTRYPOINT ["sh","-c","java $JAVA_OPTS -jar /app/app.jar"] 
+# Railway maps the container port automatically; no EXPOSE needed
+CMD ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar --server.port=$PORT"] 
