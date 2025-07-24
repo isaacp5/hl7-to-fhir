@@ -1,0 +1,8 @@
+[build]
+dockerfile = "Dockerfile"
+
+[service]
+name = "hl7-converter"
+# Expose internal container port that the app listens on
+ports = ["8081"]
+healthcheck_path = "/"
