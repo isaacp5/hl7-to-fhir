@@ -14,3 +14,5 @@ COPY --from=build /workspace/app.jar app.jar
 ENV JAVA_OPTS=""
 # Railway maps the container port automatically; no EXPOSE needed
 CMD ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar --server.port=$PORT"] 
+EXPOSE 8080
+CMD ["java", "-jar", "/app/app.jar"] 
